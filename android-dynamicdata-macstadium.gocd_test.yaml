@@ -1,0 +1,237 @@
+format_version: 9
+environments:
+  qa-automation-cds-uat:
+    pipelines:
+      - CDS-All-DynamicData-UAT-Android-MacStadium_TEST
+pipelines:
+  CDS-All-DynamicData-UAT-Android-MacStadium_TEST:
+    group: qa-automation
+    label_template: ${COUNT}
+    # timer:
+    #   spec: "0 0 12 ? * SUN-THURS"
+    environment_variables:
+      PLAN_ID: 32271
+      TAGES: regression
+      ENABLE_DYNAMIC_DATA: true
+      EXCLUDE_TAG: incomplete
+      BRANCH: master
+    lock_behavior: unlockWhenFinished
+    display_order: -1
+    materials:
+      qa-repository:
+        git: '#{project_repo}'             
+        shallow_clone: false
+        auto_update: false
+        branch: 'master'
+        destination: '#{project}'
+      testrail_runner:
+        git: git@github.com:centraldigital/qa-testrail_runner.git
+        shallow_clone: false
+        auto_update: false
+        branch: master
+        destination: etc
+      qa-config:
+        git: git@github.com:centraldigital/qa-config.git
+        shallow_clone: false
+        auto_update: false
+        branch: master
+        destination: qa-config
+    stages:
+    - qa-repository:
+        fetch_materials: true
+        keep_artifacts: true
+        clean_workspace: true
+        approval:
+          type: manual
+          allow_only_on_success: false
+        jobs:
+          qa-run:
+            timeout: 0
+            resources:
+            - cds-gocd-qa
+            tabs:
+              Report: '#{project}/Report/report.html'
+            artifacts:
+            - external:
+                id: qa-test-export
+                store_id: qa-test-qa
+                configuration:
+                  options:
+                    Destination: ${GO_PIPELINE_NAME}/${GO_PIPELINE_COUNTER}/${GO_STAGE_NAME}/${GO_STAGE_COUNTER}/${GO_JOB_NAME}
+                    Source: '#{project}/Report*'
+            - build:
+                source: '#{project}/Report*'
+                destination: build
+            - test:
+                source: '#{project}/Report/report.html'
+                destination: ${GO_PIPELINE_NAME}/${GO_PIPELINE_COUNTER}/${GO_STAGE_NAME}/${GO_STAGE_COUNTER}/${GO_JOB_NAME}
+            environment_variables:
+                rerunEnable: '#{rerunEnable}'
+                resourcefile: '#{resourcefile}'
+                retryCount: '#{retryCount}'
+            tasks:
+            - plugin:
+                configuration:
+                  id: slack.task
+                  version: "2.0"
+                options:
+                  WebhookUrl: https://hooks.slack.com/services/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
+                  Message: ""
+                  IconOrEmoji: "🤖"
+                  Channel: qa-cds-automation-result
+                  Color: ""
+                  DisplayName: GO-BOT
+                  Title: "🎉 Starting Test Execution for #{pipeline}"
+                  ColorType: Good
+                  MarkdownInText: ""
+                  FailOnError: ""
+                  ChannelType: Channel
+                run_if: passed
+            - exec:
+                arguments:
+                - -c
+                - aws ecr get-login-password --region ap-southeast-1 | docker login --username AWS --password-stdin 841787149052.dkr.ecr.ap-southeast-1.amazonaws.com
+                command: bash
+                run_if: passed
+            - exec:
+                arguments:
+                - -c
+                - git pull
+                command: sh
+                working_directory: 'qa-config'
+                run_if: passed
+            - exec:
+                arguments:
+                - -c
+                - git checkout "${BRANCH}" && git pull
+                command: sh
+                working_directory: '#{project}'
+                run_if: passed
+            - exec:
+                arguments:
+                - -c
+                - git submodule update --remote
+                command: sh
+                working_directory: '#{project}'
+                run_if: passed
+            - exec:
+                arguments:
+                - -c
+                - git submodule status
+                command: sh
+                working_directory: '#{project}'
+                run_if: passed
+            - exec:
+                arguments:
+                - -c
+                - touch 'Android_test.yaml'
+                command: sh
+                working_directory: '#{project}'
+                run_if: passed
+            - exec:
+                arguments:
+                - -c
+                - 'cp -r etc/ "#{project}"/'
+                command: sh
+                run_if: passed
+            - exec:
+                arguments:
+                - -c
+                - 'ls'
+                command: sh
+                run_if: passed
+            - exec:
+                arguments:
+                - -c
+                - '/bin/python3 ./etc/testrail_runId_parser.py -r ${PLAN_ID} --api-key H4u/Vob36vpKGkUrZrE5-QcwRfVOZ7xb5FcT5eZGl -o . --username gocd@testrail.net -f test'
+                command: sh
+                working_directory: '#{project}'
+                run_if: passed
+            - exec:
+                arguments:
+                - -c
+                - 'ls'
+                command: sh
+                working_directory: '#{project}'
+                run_if: passed
+            - exec:
+                arguments:
+                - -c
+                - 'cat "Android_test.yaml"'
+                command: sh
+                working_directory: '#{project}'
+                run_if: passed
+            - exec:
+                arguments:
+                - -c
+                - 'echo "dynamic_data" > plan_config.txt'
+                command: sh
+                working_directory: '#{project}'
+                run_if: passed       
+            - exec:
+                arguments:
+                - -c
+                - 'chmod 755 ../qa-config/execute* ../qa-config/newrelic/gocd/ ./etc/*'
+                command: sh
+                working_directory: '#{project}'
+                run_if: passed
+            - exec:
+                arguments:
+                  - -c
+                  - 'curl http://125.26.15.143:4823/start_cds_android'
+                command: sh
+                working_directory: '#{project}'
+                run_if: passed
+            - exec:
+                arguments:
+                - -c
+                - '../qa-config/execute-test-runner-custom-retry-count "${TAGES}" "#{test_file}" "${GO_PIPELINE_NAME}" "${EXCLUDE_TAG}" "${PLAN_ID}" "#{variable1} --variable enable_dynamic_test_data:"${ENABLE_DYNAMIC_DATA}"" "#{platform}" #{parallel_process}'
+                command: sh
+                working_directory: '#{project}'
+                run_if: passed 
+            - exec:
+                arguments:
+                - -c
+                - 'ls -la; pwd'
+                command: bash
+                working_directory: '#{project}'
+                run_id: passed
+            - exec:
+                arguments:
+                - -c
+                - 'cat pabot-summary.log'
+                command: sh
+                working_directory: '#{project}'
+                run_if: passed            
+            - exec:
+                arguments:
+                - -c
+                - '/bin/python3 ../qa-config/newrelic/gocd/reporter.py --bu #{newrelic_bu} --test-level #{newrelic_test_level} --env #{newrelic_env} --platform #{newrelic_platform} --pipeline ${GO_PIPELINE_NAME} --parallel-process #{parallel_process} --result-path pabot-summary.log --internal'
+                command: sh
+                working_directory: '#{project}'
+                run_if: passed
+            - exec:
+                arguments:
+                - -c
+                - echo $PWD;ls -l;ls -l Report;
+                command: bash
+                working_directory: '#{project}'
+                run_if: passed
+
+
+    parameters:
+      pipeline: CDS-All-DynamicData-UAT-Android-MacStadium_TEST
+      project: qa-cds-core
+      project_repo: git@github.com:centraldigital/qa-cds-core.git
+      project_branch: master
+      test_file: testcases/mobile/android
+      variable1: '--variable BU:CDS --variable ENV:UAT --variable TEST_PLATFORM:android  --variable  LANGUAGE:th --variable mobileDevice:doppio_virtual_farm_android --variable enable_dynamic_test_data:true'
+      platform: 'Android_test.yaml'
+      parallel_process: 2
+      newrelic_bu: CDS
+      newrelic_test_level: E2E
+      newrelic_env: UAT
+      newrelic_platform: Android
+      rerunEnable: true
+      resourcefile: resources/android_virtual_farm_config.dat
+      retryCount: 1
